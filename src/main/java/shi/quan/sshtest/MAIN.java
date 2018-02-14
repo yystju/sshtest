@@ -1,15 +1,13 @@
 package shi.quan.sshtest;
 
 import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.channel.ClientChannel;
+import org.apache.sshd.client.channel.ChannelShell;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.future.ConnectFuture;
 import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
 import org.apache.sshd.common.forward.DefaultForwarderFactory;
-import org.apache.sshd.common.util.io.NoCloseInputStream;
-import org.apache.sshd.common.util.io.NoCloseOutputStream;
 import org.apache.sshd.server.*;
 import org.apache.sshd.server.auth.password.PasswordAuthenticator;
 import org.apache.sshd.server.auth.password.PasswordChangeRequiredException;
@@ -21,6 +19,12 @@ import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.server.shell.ProcessShellFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.PropertySource;
 
 import java.io.*;
 import java.security.KeyPair;
@@ -28,12 +32,23 @@ import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.util.Arrays;
 
+@SpringBootApplication
+@PropertySource("classpath:/application.properties")
 public class MAIN {
     private static Logger logger = LoggerFactory.getLogger(MAIN.class);
 
+    public static void main(String[] args) throws Exception {
+        ConfigurableApplicationContext context = SpringApplication.run(MAIN.class, args);
+    }
 
+    @Bean
+    CommandLineRunner runner() {
+        return (args) -> {
+            main_server(args);
+        };
+    }
 
-    public static void main(String[] args) {
+    public static void main_client(String[] args) {
         try {
             try(SshClient client = SshClient.setUpDefaultClient()) {
                 client.setServerKeyVerifier(AcceptAllServerKeyVerifier.INSTANCE);
@@ -59,10 +74,46 @@ public class MAIN {
 
                     session.auth().verify(10000);
 
-                    try(ClientChannel channel = session.createChannel(ClientChannel.CHANNEL_SHELL)) {
-                        channel.setIn(new NoCloseInputStream(System.in));
-                        channel.setOut(new NoCloseOutputStream(System.out));
-                        channel.setErr(new NoCloseOutputStream(System.err));
+                    try(ChannelShell channel = session.createShellChannel()) {
+                        logger.info("channel.getPtyType() : {}", channel.getPtyType());
+                        logger.info("channel.getPtyModes() : {}", channel.getPtyModes());
+//                        channel.setIn((System.in));
+//                        channel.setOut((System.out));
+
+//                        channel.setOut(new OutputStream() {
+//                            ByteArrayOutputStream outs = new ByteArrayOutputStream();
+//
+//                            @Override
+//                            public void write(int b) throws IOException {
+//                                outs.write(b);
+//
+//                                if(outs.toString().endsWith("\n")) {
+//                                    System.out.print(new String(outs.toByteArray()));
+//                                    outs.reset();
+//                                }
+//                            }
+//                        });
+
+                        channel.setOut((System.out));
+                        channel.setIn(System.in);
+//                        channel.setOut(new OutputStream() {
+//                            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+//                            @Override
+//                            public void write(int b) throws IOException {
+//                                outputStream.write(b);
+//
+//                                String str = new String(outputStream.toByteArray(), "UTF-8");
+//
+//                                if(str.endsWith(System.getProperty("line.seperator"))) {
+//                                    System.out.println(">> " + str);
+//                                }
+//                            }
+//                        });
+
+//                        channel.setErr((System.err));
+//                        channel.setIn(new NoCloseInputStream(System.in));
+//                        channel.setOut(new NoCloseOutputStream(System.out));
+//                        channel.setErr(new NoCloseOutputStream(System.err));
 
                         channel.open();
 
@@ -103,7 +154,7 @@ public class MAIN {
 
             sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(keyPairFile));
 
-            sshd.setShellFactory(new ProcessShellFactory(new String[] { "/bin/sh", "-i", "-l" }));
+            sshd.setShellFactory(new ProcessShellFactory(new String[] { "/bin/bash", "-i", "-l" }));
 
             CommandFactory myCommandFactory = new CommandFactory() {
                 public Command createCommand(String s) {
