@@ -6,8 +6,13 @@ import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.future.ConnectFuture;
 import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
+import org.apache.sshd.common.channel.PtyMode;
 import org.apache.sshd.common.config.keys.FilePasswordProvider;
+import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory;
+import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.forward.DefaultForwarderFactory;
+import org.apache.sshd.common.util.io.NoCloseInputStream;
+import org.apache.sshd.common.util.io.NoCloseOutputStream;
 import org.apache.sshd.server.*;
 import org.apache.sshd.server.auth.password.PasswordAuthenticator;
 import org.apache.sshd.server.auth.password.PasswordChangeRequiredException;
@@ -31,6 +36,7 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.util.Arrays;
+import java.util.Map;
 
 @SpringBootApplication
 @PropertySource("classpath:/application.properties")
@@ -45,6 +51,7 @@ public class MAIN {
     CommandLineRunner runner() {
         return (args) -> {
             main_server(args);
+//            main_client(args);
         };
     }
 
@@ -77,43 +84,32 @@ public class MAIN {
                     try(ChannelShell channel = session.createShellChannel()) {
                         logger.info("channel.getPtyType() : {}", channel.getPtyType());
                         logger.info("channel.getPtyModes() : {}", channel.getPtyModes());
-//                        channel.setIn((System.in));
-//                        channel.setOut((System.out));
 
-//                        channel.setOut(new OutputStream() {
-//                            ByteArrayOutputStream outs = new ByteArrayOutputStream();
-//
-//                            @Override
-//                            public void write(int b) throws IOException {
-//                                outs.write(b);
-//
-//                                if(outs.toString().endsWith("\n")) {
-//                                    System.out.print(new String(outs.toByteArray()));
-//                                    outs.reset();
-//                                }
-//                            }
-//                        });
+                        channel.setPtyType("xterm-256color");
 
-                        channel.setOut((System.out));
-                        channel.setIn(System.in);
-//                        channel.setOut(new OutputStream() {
-//                            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-//                            @Override
-//                            public void write(int b) throws IOException {
-//                                outputStream.write(b);
-//
-//                                String str = new String(outputStream.toByteArray(), "UTF-8");
-//
-//                                if(str.endsWith(System.getProperty("line.seperator"))) {
-//                                    System.out.println(">> " + str);
-//                                }
-//                            }
-//                        });
+                        Map<PtyMode, Integer> modes = channel.getPtyModes();
 
-//                        channel.setErr((System.err));
-//                        channel.setIn(new NoCloseInputStream(System.in));
-//                        channel.setOut(new NoCloseOutputStream(System.out));
-//                        channel.setErr(new NoCloseOutputStream(System.err));
+                        for(PtyMode key : modes.keySet()) {
+                            if(key == PtyMode.ECHO) {
+                                modes.put(key, 0);
+                            } else if(key == PtyMode.ECHOCTL) {
+                                modes.put(key, 0);
+                            } else if(key == PtyMode.ECHOE) {
+                                modes.put(key, 0);
+                            } else if(key == PtyMode.ECHOK) {
+                                modes.put(key, 0);
+                            } else if(key == PtyMode.ECHOKE) {
+                                modes.put(key, 0);
+                            } else if(key == PtyMode.ECHONL) {
+                                modes.put(key, 0);
+                            }
+                        }
+
+                        channel.setPtyModes(modes);
+
+                        channel.setIn(new NoCloseInputStream(System.in));
+                        channel.setOut(new NoCloseOutputStream(System.out));
+                        channel.setErr(new NoCloseOutputStream(System.err));
 
                         channel.open();
 
@@ -152,102 +148,41 @@ public class MAIN {
                 outs.close();
             }
 
+            File workfolder = new File("/home/quan/root");
+
             sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(keyPairFile));
 
-            sshd.setShellFactory(new ProcessShellFactory(new String[] { "/bin/bash", "-i", "-l" }));
+//            sshd.setShellFactory(new ProcessShellFactory(new String[] { "/bin/sh", "-i", "-l" }));
 
-            CommandFactory myCommandFactory = new CommandFactory() {
-                public Command createCommand(String s) {
-                    logger.info("[myCommandFactory.createCommand] s : {}", s);
+            VirtualFileSystemFactory fileSystemFactory = new VirtualFileSystemFactory();
 
-                    Command cmd = new Command() {
-                        private InputStream ins;
-                        private OutputStream outs;
-                        private OutputStream errs;
-                        private ExitCallback exitCallback;
+            fileSystemFactory.setDefaultHomeDir(workfolder.toPath());
 
-                        public void setInputStream(InputStream inputStream) {
-                            this.ins = inputStream;
-                        }
+            fileSystemFactory.setUserHomeDir("root", workfolder.toPath());
 
-                        public void setOutputStream(OutputStream outputStream) {
-                            this.outs = outputStream;
-                        }
+            sshd.setFileSystemFactory(fileSystemFactory);
 
-                        public void setErrorStream(OutputStream outputStream) {
-                            this.errs = outputStream;
-                        }
-
-                        public void setExitCallback(ExitCallback exitCallback) {
-                            this.exitCallback = exitCallback;
-                        }
-
-                        public void start(Environment environment) throws IOException {
-                            logger.info("[Command.start] environment : {}", environment);
-                            logger.info("[Command.start] exitCallback : {}", this.exitCallback);
-
-                            this.outs.write(("测试" + System.getProperty("line.separator")).getBytes("UTF-8"));
-                            this.outs.flush();
-
-                            (new Thread(() -> {
-                                try {
-                                    byte[] buffer = new byte[10];
-
-                                    int len = -1;
-
-                                    while(-1 != (len = this.ins.read(buffer))) {
-                                        System.out.write(buffer, 0, len);
-                                    }
-
-                                    exitCallback.onExit(0);
-                                } catch (Exception e) {
-                                    logger.error(e.getMessage(), e);
-                                }
-                            })).start();
-
-//                            (new Thread(() -> {
-//                                try {
-//                                    byte[] buffer = new byte[10];
-//
-//                                    int len = -1;
-//
-//                                    while(-1 != (len = System.in.read(buffer))) {
-//                                        this.outs.write(buffer, 0, len);
-//                                    }
-//                                } catch (Exception e) {
-//                                    logger.error(e.getMessage(), e);
-//                                }
-//                            })).start();
-                        }
-
-                        public void destroy() throws Exception {
-                            logger.info("[Command.destroy]");
-                        }
-                    };
-
-                    return cmd;
-                }
-            };
+            ProcessCommandFactory processCommandFactory = new ProcessCommandFactory(workfolder);
 
             ScpCommandFactory scpCommandFactory = new ScpCommandFactory();
 
-            scpCommandFactory.setDelegateCommandFactory(myCommandFactory);
+            scpCommandFactory.setDelegateCommandFactory(processCommandFactory);
 
             sshd.setCommandFactory(scpCommandFactory);
 
-            sshd.setForwarderFactory(new DefaultForwarderFactory());
+            sshd.setForwarderFactory(DefaultForwarderFactory.INSTANCE);
 
             sshd.setPublickeyAuthenticator(new PublickeyAuthenticator() {
                 public boolean authenticate(String s, PublicKey publicKey, ServerSession serverSession) {
-                    logger.info("[PublickeyAuthenticator.authenticate] s : {}, publicKey: {}, serverSession : {}", s, publicKey, serverSession);
-                    return true;
+                    //logger.info("[PublickeyAuthenticator.authenticate] s : {}, publicKey: {}, serverSession : {}", s, publicKey, serverSession);
+                    return false;
                 }
             });
 
             sshd.setPasswordAuthenticator(new PasswordAuthenticator() {
-                public boolean authenticate(String s, String s1, ServerSession serverSession) throws PasswordChangeRequiredException {
-                    logger.info("[PasswordAuthenticator.authenticate]s : {}, s1: {}, serverSession : {}", s, s1, serverSession);
-                    return true;
+                public boolean authenticate(String name, String passwd, ServerSession serverSession) throws PasswordChangeRequiredException {
+                    logger.info("[PasswordAuthenticator.authenticate] name : {}, passwd: {}, client : {}", name, passwd, serverSession.getClientAddress());
+                    return "root".equals(name) && "passw0rd".equals(passwd);
                 }
             });
 
@@ -258,6 +193,8 @@ public class MAIN {
             System.in.read();
 
             sshd.close();
+
+            processCommandFactory.shutdown();
         } catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
         }
