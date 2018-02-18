@@ -8,7 +8,7 @@
         </layout>
     </appender>
 
-    <logger name="shi.quan.sshtest" level="debug"
+    <logger name="shi.quan.sshtest" level="info"
             additivity="false">
         <appender-ref ref="STDOUT" />
     </logger>

@@ -2,10 +2,14 @@ package shi.quan.sshtest;
 
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.forward.DefaultForwarderFactory;
+import org.apache.sshd.common.forward.PortForwardingEventListener;
+import org.apache.sshd.common.session.Session;
+import org.apache.sshd.common.util.net.SshdSocketAddress;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.auth.password.PasswordAuthenticator;
 import org.apache.sshd.server.auth.password.PasswordChangeRequiredException;
 import org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator;
+import org.apache.sshd.server.forward.AcceptAllForwardingFilter;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.server.scp.ScpCommandFactory;
 import org.apache.sshd.server.session.ServerSession;
@@ -113,12 +117,76 @@ public class SSHService {
         fileSystemFactory.setUserHomeDir(userName, workFolder.toPath());
         sshd.setFileSystemFactory(fileSystemFactory);
 
+
         ProcessCommandFactory processCommandFactory = new ProcessCommandFactory(executorService, workFolder);
         ScpCommandFactory scpCommandFactory = new ScpCommandFactory();
         scpCommandFactory.setExecutorService(executorService);
         scpCommandFactory.setDelegateCommandFactory(processCommandFactory);
         sshd.setCommandFactory(scpCommandFactory);
-        sshd.setForwarderFactory(DefaultForwarderFactory.INSTANCE);
+
+        DefaultForwarderFactory forwarderFactory = new DefaultForwarderFactory();
+
+        forwarderFactory.addPortForwardingEventListener(new PortForwardingEventListener() {
+            @Override
+            public void establishingExplicitTunnel(Session session, SshdSocketAddress local, SshdSocketAddress remote, boolean localForwarding) throws IOException {
+                logger.info("[establishingExplicitTunnel] user : {}, local : {}, remote : {}, localForwarding : {}", session.getUsername(), local.toString(), remote.toString(), localForwarding);
+            }
+
+            @Override
+            public void establishedExplicitTunnel(Session session, SshdSocketAddress local, SshdSocketAddress remote, boolean localForwarding, SshdSocketAddress boundAddress, Throwable reason) throws IOException {
+                logger.info("[] user : {}, local : {}, remote : {}, localForwarding : {}", session.getUsername(), local.toString(), remote.toString(), localForwarding);
+
+            }
+
+            @Override
+            public void tearingDownExplicitTunnel(Session session, SshdSocketAddress address, boolean localForwarding) throws IOException {
+                logger.info("[tearingDownExplicitTunnel] user : {}, address : {}, localForwarding : {}", session.getUsername(), address.toString(), localForwarding);
+
+            }
+
+            @Override
+            public void tornDownExplicitTunnel(Session session, SshdSocketAddress address, boolean localForwarding, Throwable reason) throws IOException {
+                logger.info("[tornDownExplicitTunnel] user : {}, address : {}, localForwarding : {}", session.getUsername(), address.toString(), localForwarding);
+
+                if(reason != null) {
+                    logger.info("reason : ", reason);
+                }
+
+            }
+
+            @Override
+            public void establishingDynamicTunnel(Session session, SshdSocketAddress local) throws IOException {
+                logger.info("[establishingDynamicTunnel] user : {}, local : {}", session.getUsername(), local.toString());
+
+            }
+
+            @Override
+            public void establishedDynamicTunnel(Session session, SshdSocketAddress local, SshdSocketAddress boundAddress, Throwable reason) throws IOException {
+                logger.info("[establishedDynamicTunnel] user : {}, local : {}, remote : {}", session.getUsername(), local.toString(), boundAddress.toString());
+                if(reason != null) {
+                    logger.info("reason : ", reason);
+                }
+
+            }
+
+            @Override
+            public void tearingDownDynamicTunnel(Session session, SshdSocketAddress address) throws IOException {
+                logger.info("[tearingDownDynamicTunnel] user : {}, address : {}", session.getUsername(), address.toString());
+
+            }
+
+            @Override
+            public void tornDownDynamicTunnel(Session session, SshdSocketAddress address, Throwable reason) throws IOException {
+                logger.info("[tornDownDynamicTunnel] user : {}, address : {}", session.getUsername(), address.toString());
+
+                if(reason != null) {
+                    logger.info("reason : ", reason);
+                }
+            }
+        });
+        sshd.setForwardingFilter(new AcceptAllForwardingFilter());
+        sshd.setForwarderFactory(forwarderFactory);
+
 
         sshd.setPublickeyAuthenticator(new PublickeyAuthenticator() {
             public boolean authenticate(String s, PublicKey publicKey, ServerSession serverSession) {
