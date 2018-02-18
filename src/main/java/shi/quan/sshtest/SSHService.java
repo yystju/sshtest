@@ -54,10 +54,13 @@ public class SSHService {
                 hasBeenStarted = true;
 
                 workFolder = workFolder.getAbsoluteFile();
+                workFolder = workFolder.getCanonicalFile();
 
                 if(!workFolder.exists()) {
                     workFolder.mkdirs();
                 }
+
+                logger.info("workfolder : {}", workFolder);
 
                 executorService = Executors.newCachedThreadPool();
 
