@@ -53,8 +53,7 @@ public class SSHService {
             if(!hasBeenStarted) {
                 hasBeenStarted = true;
 
-                workFolder = workFolder.getAbsoluteFile();
-                workFolder = workFolder.getCanonicalFile();
+                workFolder = workFolder.getAbsoluteFile().getCanonicalFile();
 
                 if(!workFolder.exists()) {
                     workFolder.mkdirs();
