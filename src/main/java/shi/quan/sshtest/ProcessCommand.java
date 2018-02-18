@@ -10,7 +10,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -88,7 +87,7 @@ public class ProcessCommand implements Command {
                     try {
                         int rc = p.waitFor();
 
-                        System.out.println("rc : " + rc);
+                        System.out.println("command : \"" + command + "\" end with rc : " + rc);
 
                         Thread.sleep(100);
 
@@ -126,19 +125,14 @@ public class ProcessCommand implements Command {
         @Override
         public void run() {
             try {
-                System.out.println("--run--");
-
                 byte[] buffer = new byte[this.bufferSize];
 
                 int len = -1;
 
                 while(-1 != (len = ins.read(buffer))) {
-                    System.out.println("--len--" + len);
                     outs.write(buffer, 0, len);
                     outs.flush();
                 }
-
-                System.out.println("--done--");
             } catch (Exception ex) {
                 ex.printStackTrace();
             } finally {

@@ -5,13 +5,13 @@ import org.apache.sshd.server.CommandFactory;
 
 import java.io.File;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class ProcessCommandFactory implements CommandFactory {
-    private ExecutorService executorService = Executors.newCachedThreadPool();
+    private ExecutorService executorService;
     private File workfolder;
 
-    public ProcessCommandFactory(File workfolder) {
+    public ProcessCommandFactory(ExecutorService executorService, File workfolder) {
+        this.executorService = executorService;
         this.workfolder = workfolder;
     }
 
