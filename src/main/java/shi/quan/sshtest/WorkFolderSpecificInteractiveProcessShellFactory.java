@@ -9,11 +9,14 @@ public class WorkFolderSpecificInteractiveProcessShellFactory extends Interactiv
     private File workFolder;
 
     public WorkFolderSpecificInteractiveProcessShellFactory(File workFolder) {
+        super();
         this.workFolder = workFolder;
     }
 
     @Override
     protected InvertedShell createInvertedShell() {
-        return new WorkFolderSpecificProcessShell(this.workFolder, resolveEffectiveCommand(getCommand()));
+        //return new WorkFolderSpecificProcessShell(this.workFolder, resolveEffectiveCommand(getCommand()));
+
+        return new WorkFolderSpecificProcessShell(this.workFolder, "/bin/sh", "-i");
     }
 }

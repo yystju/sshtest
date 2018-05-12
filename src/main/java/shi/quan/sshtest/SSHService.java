@@ -13,19 +13,21 @@ import org.apache.sshd.server.forward.AcceptAllForwardingFilter;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.server.scp.ScpCommandFactory;
 import org.apache.sshd.server.session.ServerSession;
+import org.apache.sshd.server.shell.ProcessShellFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import sun.misc.HexDumpEncoder;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -50,7 +52,6 @@ public class SSHService {
     private SshServer sshd;
     private ExecutorService executorService;
     private boolean hasBeenStarted = false;
-
 
     public void start() throws IOException, NoSuchAlgorithmException {
         synchronized (SSHService.class) {
@@ -89,7 +90,8 @@ public class SSHService {
 
         sshd.setPort(port);
 
-        File keyPairFile = new File(workFolder,"keypair.ser");
+        File keyPairFile = new File(workFolder,".keypair.ser");
+        File publicKeyFile = new File(workFolder,".knownhosts");
 
         if(!keyPairFile.exists()) {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
@@ -107,8 +109,9 @@ public class SSHService {
 
         sshd.setKeyPairProvider(new SimpleGeneratorHostKeyProvider(keyPairFile));
 
-
-        WorkFolderSpecificInteractiveProcessShellFactory shellFactory = new WorkFolderSpecificInteractiveProcessShellFactory(this.workFolder);
+        TestShellFactory shellFactory = new TestShellFactory(workFolder);
+//        WorkFolderSpecificInteractiveProcessShellFactory shellFactory = new WorkFolderSpecificInteractiveProcessShellFactory(this.workFolder);
+//        ProcessShellFactory shellFactory = new ProcessShellFactory("/bin/bash", "-i", "-l");
         sshd.setShellFactory(shellFactory);
 
 
@@ -187,21 +190,104 @@ public class SSHService {
         sshd.setForwardingFilter(new AcceptAllForwardingFilter());
         sshd.setForwarderFactory(forwarderFactory);
 
-
         sshd.setPublickeyAuthenticator(new PublickeyAuthenticator() {
             public boolean authenticate(String s, PublicKey publicKey, ServerSession serverSession) {
-                logger.debug("[PublickeyAuthenticator.authenticate] s : {}, publicKey: {}, serverSession : {}", s, publicKey, serverSession);
-                return false;
+//                logger.info("[PublickeyAuthenticator.authenticate] s : {}, publicKey: {}, serverSession : {}", s, publicKey, serverSession);
+
+                byte[] key = publicKey.getEncoded();
+
+                serverSession.getProperties().put("__PUBKEY__", key);
+
+                Base64.Encoder encoder = Base64.getEncoder();
+
+//                logger.info("--> CLIENT KEY : {}", (new HexDumpEncoder()).encode(key));
+//                logger.info("algorithm : {}", publicKey.getAlgorithm());
+//                logger.info("format : {}", publicKey.getFormat());
+
+                List<byte[]> publicKeyList = getPublicKeys(publicKeyFile);
+
+                boolean isEqual = false;
+
+                for (byte[] bytes : publicKeyList) {
+//                    logger.info("--> KNOWN KEY : {}, LEN : {} - {}", (new HexDumpEncoder()).encode(bytes), bytes.length, key.length);
+
+                    if (bytes.length == key.length) {
+
+                        isEqual = true;
+
+                        for (int i = 0; i < bytes.length; ++i) {
+                            if (bytes[i] != key[i]) {
+//                                logger.info(">> i: {}, b : {}, k : {}", i, bytes[i], key[i]);
+                                isEqual = false;
+                                break;
+                            }
+                        }
+
+                        if (isEqual) {
+                            break;
+                        }
+                    }
+                }
+
+//                logger.info("isEqual : {}", isEqual);
+
+                return isEqual;
             }
         });
 
         sshd.setPasswordAuthenticator(new PasswordAuthenticator() {
             public boolean authenticate(String name, String passwd, ServerSession serverSession) throws PasswordChangeRequiredException {
-                logger.debug("[PasswordAuthenticator.authenticate] name : {}, passwd: {}, client : {}", name, passwd, serverSession.getClientAddress());
-                return userName.equals(name) && password.equals(passwd);
+//                logger.info("[PasswordAuthenticator.authenticate] name : {}, passwd: {}, client : {}", name, passwd, serverSession.getClientAddress());
+                boolean result = userName.equals(name) && password.equals(passwd);
+
+//                logger.info(">> {} {}", userName, passwd);
+
+                if (result) {
+                    byte[] key = (byte[])serverSession.getProperties().get("__PUBKEY__");
+                    Base64.Encoder encoder = Base64.getEncoder();
+                    if (key != null) {
+                        try {
+                            PrintStream outs = new PrintStream(new FileOutputStream(publicKeyFile, true));
+
+                            outs.println(encoder.encodeToString(key));
+
+                            outs.close();
+                        } catch (FileNotFoundException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+
+                return result;
             }
         });
 
         sshd.start();
+    }
+
+    private List<byte[]> getPublicKeys(File publicKeyFile) {
+        List<byte[]> publicKeyList = new ArrayList<>();
+
+        try {
+            if(!publicKeyFile.exists()) {
+                publicKeyFile.createNewFile();
+            }
+
+            BufferedReader reader = new BufferedReader(new FileReader(publicKeyFile));
+
+            String line = null;
+
+            Base64.Decoder decoder = Base64.getDecoder();
+
+            while(null != (line = reader.readLine())) {
+                publicKeyList.add(decoder.decode(line));
+            }
+
+            reader.close();
+        } catch (Exception ex) {
+            logger.info("ERROR : {}", ex.getMessage());
+        }
+
+        return publicKeyList;
     }
 }
